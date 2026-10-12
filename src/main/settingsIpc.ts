@@ -3,13 +3,15 @@ import { isCustomRef, isEmoteRefShape, type EmoteRef, type ImportResult } from '
 import type { Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type SetSettingsResult } from '../shared/ipc';
 import { hotkeyLabel, hotkeyToAccelerator, type Hotkey } from '../shared/keys';
-import { pingById, type PingId } from '../shared/pings';
+import { isPingId, pingById, type PingId } from '../shared/pings';
 import type { Platform } from '../shared/platform';
 import type { JoinResult, RoomState } from '../shared/room';
+import { MAX_DESKTOP_SIGNAL } from '../shared/roomProtocol';
 import { patchClashes, rendererPatch } from '../shared/settings';
 import type { UpdateState } from '../shared/update';
 import { emoteFileFrom, type EmoteLibrary } from './emoteLibrary';
 import type { SettingsStore } from './settingsStore';
+import { settingsWindow } from './settingsWindow';
 
 const PROJECT_URL = 'https://github.com/darrenprx/lolPing';
 /** Where "What's new" goes when no update is known. */
@@ -49,6 +51,10 @@ export interface SettingsIpcDeps {
     clipboardCode(): Promise<string | null>;
     copyCode(): void;
     retryInternet(): void;
+    prepareDesktopShare(display: number): Promise<boolean>;
+    setDesktopShare(share: { display: number; token: string } | null): void;
+    sendDesktopSignal(peer: string, data: string): void;
+    sendDesktopPing(peer: string, share: string, ping: PingId, display: number, x: number, y: number): void;
   };
 }
 
@@ -131,6 +137,32 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(SETTINGS_CH.roomClipboard, () => d.room.clipboardCode());
   ipcMain.handle(SETTINGS_CH.roomCopy, () => d.room.copyCode());
   ipcMain.handle(SETTINGS_CH.roomRetryInternet, () => d.room.retryInternet());
+  const fromSettings = (sender: Electron.WebContents): boolean => sender === settingsWindow()?.webContents;
+  ipcMain.handle(SETTINGS_CH.desktopPrepare, (e, display: unknown) =>
+    fromSettings(e.sender) && Number.isInteger(display) && (display as number) >= 1 && (display as number) <= 16
+      ? d.room.prepareDesktopShare(display as number) : false);
+  ipcMain.handle(SETTINGS_CH.desktopShare, (e, raw: unknown) => {
+    if (!fromSettings(e.sender)) return;
+    if (raw === null) return d.room.setDesktopShare(null);
+    if (typeof raw !== 'object' || !raw) return;
+    const { display, token } = raw as Record<string, unknown>;
+    if (Number.isInteger(display) && (display as number) >= 1 && (display as number) <= 16 && typeof token === 'string' && /^[0-9a-f]{16}$/.test(token)) {
+      d.room.setDesktopShare({ display: display as number, token });
+    }
+  });
+  ipcMain.handle(SETTINGS_CH.desktopSignal, (e, peer: unknown, data: unknown) => {
+    if (fromSettings(e.sender) && typeof peer === 'string' && /^[0-9a-f]{16}$/.test(peer) && typeof data === 'string' && data.length <= MAX_DESKTOP_SIGNAL) {
+      d.room.sendDesktopSignal(peer, data);
+    }
+  });
+  ipcMain.handle(SETTINGS_CH.desktopPing, (e, peer: unknown, share: unknown, ping: unknown, display: unknown, x: unknown, y: unknown) => {
+    if (!fromSettings(e.sender) || typeof peer !== 'string' || !/^[0-9a-f]{16}$/.test(peer)
+      || typeof share !== 'string' || !/^[0-9a-f]{16}$/.test(share) || !isPingId(ping)
+      || !Number.isInteger(display) || (display as number) < 1 || (display as number) > 16
+      || typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1
+      || typeof y !== 'number' || !Number.isFinite(y) || y < 0 || y > 1) return;
+    d.room.sendDesktopPing(peer, share, ping, display as number, x, y);
+  });
 
   ipcMain.handle(SETTINGS_CH.updateGet, (): UpdateState | null => d.update?.state() ?? null);
   ipcMain.handle(SETTINGS_CH.updateCheck, async () => {

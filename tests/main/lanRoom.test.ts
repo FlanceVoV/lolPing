@@ -31,12 +31,16 @@ function peer(port: number, other: number, name: string) {
     resolveTarget: () => ({ displayId: 1, width: 1000, height: 500 }),
   });
   const pings: RemotePing[] = [];
+  const signals: { from: string; part: number; total: number; data: string }[] = [];
+  const desktopPings: { from: string; ping: string; d: number; x: number; y: number }[] = [];
   const toasts: RoomToast[] = [];
   let packets = 0;
   lan.on('packet', () => packets++);
   room.on('remotePing', (p: RemotePing) => pings.push(p));
+  room.on('desktopSignal', (s) => signals.push(s));
+  room.on('desktopPing', (p) => desktopPings.push(p));
   room.on('toast', (t: RoomToast) => toasts.push(t));
-  return { lan, room, pings, toasts, packets: () => packets };
+  return { lan, room, pings, signals, desktopPings, toasts, packets: () => packets };
 }
 
 let open: ReturnType<typeof peer>[] = [];
@@ -46,6 +50,21 @@ afterEach(() => {
 });
 
 describe('two rooms over loopback UDP', () => {
+  it('delivers desktop signaling and targeted preview pings on the LAN path', async () => {
+    const a = peer(A_PORT, B_PORT, 'Alice');
+    const b = peer(B_PORT, A_PORT, 'Bob');
+    open = [a, b];
+    await Promise.all([a.room.join(CODE), b.room.join(CODE)]);
+    await until(() => a.room.state().members.length === 2 && b.room.state().members.length === 2);
+    a.room.sendDesktopSignal(b.room.self, 'x'.repeat(1300));
+    await until(() => b.signals.length === 6);
+    expect(b.signals.map((s) => s.part).sort()).toEqual([0, 0, 1, 1, 2, 2]);
+    expect(b.signals.every((s) => s.from === a.room.self && s.total === 3)).toBe(true);
+    b.room.sendDesktopPing(a.room.self, '1111111111111111', 'assist', 1, 0.4, 0.6);
+    await until(() => a.desktopPings.length === 1);
+    expect(a.desktopPings[0]).toMatchObject({ from: b.room.self, ping: 'assist', d: 1, x: 0.4, y: 0.6 });
+  });
+
   it('find each other, exchange pings, survive a rebind and see a leave', async () => {
     const a = peer(A_PORT, B_PORT, 'Alice');
     const b = peer(B_PORT, A_PORT, 'Bob');

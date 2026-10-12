@@ -118,3 +118,12 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 .card.update.failed { border-color: #ff9c48; }
 .card.update.failed .icon { color: #ff9c48; }
 .updateBar { margin-top: 4px; }
+.desktopPanel { display: flex; flex-direction: column; gap: 12px; }
+.desktopHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%; }
+.desktopHeader .lbl { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.desktopControls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.desktopControls select { color: inherit; background: var(--colorNeutralBackground1); border: 1px solid var(--colorNeutralStroke1); border-radius: 4px; padding: 6px 8px; }
+.desktopViews { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; width: 100%; }
+.desktopView { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.desktopView video { display: block; width: 100%; height: auto; background: #101010; border-radius: 6px; cursor: crosshair; }
+@media (max-width: 760px) { .desktopHeader { flex-direction: column; } }

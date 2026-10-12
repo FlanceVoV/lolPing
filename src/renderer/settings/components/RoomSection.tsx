@@ -7,8 +7,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { RoomMember, RoomState } from '../../../shared/room';
 import { TAG_COLORS } from '../../../shared/roomColors';
 import { clampNameInput } from '../../../shared/roomProtocol';
+import { ALL_PINGS, type PingId } from '../../../shared/pings';
 import { LIMITS, type Settings } from '../../../shared/settings';
 import { api } from '../api';
+import { DesktopSession, type DesktopView } from '../desktopSession';
 import { useText } from '../text';
 import type { Update } from '../useAppState';
 import { useRoomState } from '../useRoomState';
@@ -158,7 +160,92 @@ function InRoom({ room, allowInternet }: { room: RoomState; allowInternet: boole
         ) : null}
         {room.clockSkew ? <div className="desc roomWaiting warnText">{t.roomClockSkew}</div> : null}
       </div>
+      <DesktopPanel room={room} />
     </>
+  );
+}
+
+function DesktopPanel({ room }: { room: RoomState }) {
+  const t = useText();
+  const zh = t.lang === 'zh-CN';
+  const controller = useRef<DesktopSession | null>(null);
+  const [views, setViews] = useState<DesktopView[]>([]);
+  const [sharing, setSharing] = useState<number | null>(null);
+  const [display, setDisplay] = useState(1);
+  const [ping, setPing] = useState<PingId>('generic');
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const desktop = new DesktopSession(setViews, setSharing);
+    controller.current = desktop;
+    desktop.listen();
+    desktop.roomChanged(room);
+    return () => { controller.current = null; desktop.dispose(); };
+  }, []);
+  useEffect(() => controller.current?.roomChanged(room), [room]);
+  useEffect(() => {
+    if (sharing !== null) return;
+    let live = true;
+    setReady(false);
+    void api.prepareDesktopShare(display).then((ok) => { if (live) setReady(ok); }).catch(() => { if (live) setReady(false); });
+    return () => { live = false; };
+  }, [display, sharing]);
+  const start = async () => {
+    setBusy(true);
+    setReady(false);
+    setError('');
+    try { await controller.current?.startShare(display); }
+    catch {
+      setError(zh ? '无法共享所选屏幕，请检查屏幕录制权限后重试。' : 'Could not share this display. Check screen recording permission and try again.');
+      void api.prepareDesktopShare(display).then(setReady).catch(() => setReady(false));
+    }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="card desktopPanel">
+      <div className="desktopHeader">
+        <div className="lbl">
+          <b>{zh ? '局域网桌面共享' : 'LAN desktop sharing'}</b>
+          <span className="desc">{zh ? '主动开始后，房间内同一局域网的成员可看到所选屏幕；关闭此页面或停止共享即结束。' : 'Start sharing to let room members on the same LAN view the selected display. Closing this page stops sharing.'}</span>
+        </div>
+        <div className="desktopControls">
+          <select aria-label={zh ? '共享的屏幕' : 'Display to share'} value={display} disabled={sharing !== null || busy} onChange={(e) => setDisplay(Number(e.target.value))}>
+            {room.displays.map((d) => <option key={d.number} value={d.number}>#{d.number} · {d.width}×{d.height}</option>)}
+          </select>
+          {sharing === null
+            ? <Button appearance="primary" disabled={busy || !ready || room.displays.length === 0} onClick={() => void start()}>{zh ? '开始共享' : 'Share display'}</Button>
+            : <Button onClick={() => controller.current?.stopShare()}>{zh ? '停止共享' : 'Stop sharing'}</Button>}
+        </div>
+      </div>
+      {sharing !== null ? <span className="desc">{zh ? `正在共享屏幕 #${sharing}` : `Sharing display #${sharing}`}</span> : null}
+      {error ? <span className="roomError">{error}</span> : null}
+      {views.length ? (
+        <>
+          <div className="desktopControls">
+            <label htmlFor="desktopPingType">{zh ? '点击画面发送' : 'Click a desktop to send'}</label>
+            <select id="desktopPingType" value={ping} onChange={(e) => setPing(e.target.value as PingId)}>
+              {ALL_PINGS.map((p) => <option key={p.id} value={p.id}>{t.pingNames[p.id]}</option>)}
+            </select>
+          </div>
+          <div className="desktopViews">
+            {views.map((view) => {
+              const name = room.members.find((m) => m.peer === view.peer)?.name ?? (zh ? '成员' : 'Member');
+              return <div className="desktopView" key={view.peer}>
+                <b>{name} · #{view.display}</b>
+                <video autoPlay playsInline muted ref={(element) => { if (element && element.srcObject !== view.stream) element.srcObject = view.stream; }}
+                  aria-label={zh ? `${name} 的桌面，点击发送信号` : `${name}'s desktop, click to ping`}
+                  onClick={(event) => {
+                    if (!event.currentTarget.videoWidth || !event.currentTarget.videoHeight) return;
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    controller.current?.ping(view, ping, (event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+                  }} />
+              </div>;
+            })}
+          </div>
+        </>
+      ) : <span className="desc">{zh ? '同一局域网的成员开始共享后，画面会显示在这里。' : 'A member’s desktop appears here when they start sharing on your LAN.'}</span>}
+    </div>
   );
 }
 

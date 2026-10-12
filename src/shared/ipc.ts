@@ -104,6 +104,13 @@ export interface SettingsApi {
   copyRoomCode(): Promise<void>;
   /** Reconnects to every relay now (the Room page's Retry). */
   retryInternet(): Promise<void>;
+  /** Selects one of our displays for an explicit screen-capture request. */
+  prepareDesktopShare(display: number): Promise<boolean>;
+  /** Registers the active capture so only its screen accepts remote pings. Null stops sharing. */
+  setDesktopShare(share: { display: number; token: string } | null): Promise<void>;
+  sendDesktopSignal(peer: string, data: string): Promise<void>;
+  onDesktopSignal(cb: (signal: { from: string; id: string; part: number; total: number; data: string }) => void): () => void;
+  sendDesktopPing(peer: string, share: string, ping: PingId, display: number, x: number, y: number): Promise<void>;
   /** The main process asks to scroll to a section (e.g. tray → Room settings…). */
   onShowSection(cb: (id: string) => void): () => void;
   /** Where the update checker is, or null when this build has none (a development build): then the page shows no update controls. */

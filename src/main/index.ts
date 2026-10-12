@@ -1,4 +1,4 @@
-import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
+import { app, clipboard, desktopCapturer, dialog, Menu, powerMonitor, screen, session, shell, systemPreferences, webContents, type DesktopCapturerSource } from 'electron';
 import { randomBytes, randomInt } from 'node:crypto';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -142,6 +142,17 @@ function start(): void {
       return target ? { displayId: target.id, width: target.bounds.width, height: target.bounds.height } : null;
     },
   });
+  let preparedCapture: DesktopCapturerSource | null = null;
+  let captureRequest = 0;
+  let activeShare: { display: number; token: string } | null = null;
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const prepared = preparedCapture;
+    preparedCapture = null; // each click authorizes exactly one capture request
+    if (prepared && request.frame && request.userGesture
+      && webContents.fromFrame(request.frame) === settingsWindow()?.webContents && request.videoRequested) {
+      callback({ video: prepared });
+    } else callback({});
+  });
   const roomState = (): RoomState => {
     const all = screen.getAllDisplays();
     return {
@@ -249,6 +260,15 @@ function start(): void {
   room.on('state', pushRoom);
   overlays.on('displays', pushRoom);
   room.on('remotePing', (p) => overlays.spawnRemote(p));
+  room.on('desktopSignal', (signal) => sendToSettings(SETTINGS_CH.desktopSignalReceived, signal));
+  room.on('desktopPing', (p: { share: string; d: number; x: number; y: number; ping: import('../shared/pings').PingId; tag: { name: string; color: number } }) => {
+    if (!activeShare || p.share !== activeShare.token || p.d !== activeShare.display) return;
+    const display = overlays.numbered().find((d) => d.number === p.d);
+    if (display) overlays.spawnRemote({ displayId: display.id, x: p.x * display.bounds.width, y: p.y * display.bounds.height, id: p.ping, tag: p.tag });
+  });
+  room.on('state', (s: RoomState) => {
+    if (s.phase === 'idle') { activeShare = null; preparedCapture = null; captureRequest++; }
+  });
   overlays.on('shared', (p: SharedPing) => {
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
     if (shared) room.sendPing(p.id, shared);
@@ -375,10 +395,28 @@ function start(): void {
       clipboardCode,
       copyCode: copyRoomCode,
       retryInternet: () => relay.retryNow(),
+      prepareDesktopShare: async (display) => {
+        if (room.state().phase === 'idle') return false;
+        const request = ++captureRequest;
+        const chosen = overlays.numbered().find((d) => d.number === display);
+        if (!chosen) return false;
+        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+        if (request !== captureRequest || room.state().phase === 'idle') return false;
+        const source = sources.find((s) => s.display_id === String(chosen.id));
+        if (!source) return false;
+        preparedCapture = source;
+        return true;
+      },
+      setDesktopShare: (share) => { activeShare = share; },
+      sendDesktopSignal: (peer, data) => room.sendDesktopSignal(peer, data),
+      sendDesktopPing: (peer, share, ping, display, x, y) => room.sendDesktopPing(peer, share, ping, display, x, y),
     },
   });
   // The page can't report that it went away mid-capture (window closed, renderer crashed): release the suspend here.
   onSettingsWindowGone(() => {
+    activeShare = null;
+    preparedCapture = null;
+    captureRequest++;
     if (!capturing) return;
     capturing = false;
     bridge.send({ type: 'suspend', on: false });

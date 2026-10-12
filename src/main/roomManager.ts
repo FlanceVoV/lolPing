@@ -4,7 +4,7 @@ import type { PingId } from '../shared/pings';
 import type { JoinResult, MemberPath, RoomMember, RoomStateCore } from '../shared/room';
 import { formatRoomCode, makeRoomCode, parseRoomCode } from '../shared/roomCode';
 import {
-  decodeMessage, encodeMessage, isOlderThan, PROTOCOL_VERSION, type MemberStatus, type PresenceMsg, type RoomMessage,
+  decodeMessage, DESKTOP_SIGNAL_CHUNK, encodeMessage, isOlderThan, MAX_DESKTOP_SIGNAL, PROTOCOL_VERSION, type MemberStatus, type PresenceMsg, type RoomMessage,
 } from '../shared/roomProtocol';
 import { RateLimiter } from './rateLimiter';
 import { ReplayGuard } from './replayGuard';
@@ -176,6 +176,33 @@ export class RoomManager extends EventEmitter {
 
   sendEmote(e: EmoteRef, shared: { d: number; x: number; y: number }): void {
     this.sendShared({ t: 'emote', e, ...shared });
+  }
+
+  /** Signaling and remote desktop pings are strictly unicast over a live LAN path. */
+  sendDesktopSignal(to: string, data: string): void {
+    if (data.length > MAX_DESKTOP_SIGNAL) return;
+    const total = Math.max(1, Math.ceil(data.length / DESKTOP_SIGNAL_CHUNK));
+    if (total > 64) return;
+    const id = toHex(this.deps.randomBytes(8));
+    for (let part = 0; part < total; part++) {
+      const body = { t: 'desktop-signal', to, id, part, total, data: data.slice(part * DESKTOP_SIGNAL_CHUNK, (part + 1) * DESKTOP_SIGNAL_CHUNK) };
+      // UDP has no delivery guarantee. Repeating each chunk makes a lost datagram less likely to stall setup.
+      this.sendLan(to, body);
+      this.sendLan(to, body);
+    }
+  }
+
+  sendDesktopPing(to: string, share: string, ping: PingId, d: number, x: number, y: number): void {
+    this.sendLan(to, { t: 'desktop-ping', to, share, ping, d, x, y });
+  }
+
+  private sendLan(to: string, body: Record<string, unknown>): void {
+    if (!this.keys || this.phase === 'idle' || this.paused) return;
+    const member = this.members.get(to);
+    const path = member?.paths.lan;
+    const transport = [...this.active].find((t) => t.kind === 'lan' && t.status === 'ok');
+    if (!path || !transport || this.deps.now() - path.seenAt >= ALIVE_MS.lan) return;
+    transport.sendTo(path.key, this.seal(body));
   }
 
   /** A ping or an emote: each member gets it over its own route; shared transports get one send, within the relay cap. */
@@ -380,9 +407,17 @@ export class RoomManager extends EventEmitter {
     }
     if (!m) return;
     this.heard(m, t, key);
+    if (msg.t === 'desktop-signal') {
+      if (t.kind === 'lan' && msg.to === this.self && !m.needsUpdate) this.emit('desktopSignal', { from: m.peer, ...msg });
+      return;
+    }
     // Pings and emotes pass the same gates and share one budget per member.
     if (this.paused || this.roomMuted || m.muted || m.needsUpdate) return;
     if (!this.limiter.allow(m.peer, this.deps.profile().limit)) return;
+    if (msg.t === 'desktop-ping') {
+      if (t.kind === 'lan' && msg.to === this.self) this.emit('desktopPing', { from: m.peer, ping: msg.ping, share: msg.share, d: msg.d, x: msg.x, y: msg.y, tag: { name: m.name, color: m.color } });
+      return;
+    }
     const target = this.deps.resolveTarget(msg.d);
     if (!target) return;
     const [x, y] = [msg.x * target.width, msg.y * target.height];

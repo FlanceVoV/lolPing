@@ -29,6 +29,28 @@ describe('encode / decode', () => {
   });
 });
 
+describe('desktop messages', () => {
+  const to = 'fedcba9876543210';
+  const share = '1111111111111111';
+  it('round-trips bounded signaling chunks and target screen pings', () => {
+    const signal = { ...base, t: 'desktop-signal' as const, to, id: share, part: 0, total: 2, data: 'offer' };
+    const desktopPing = { ...base, t: 'desktop-ping' as const, to, share, ping: 'assist' as const, d: 2, x: 0.25, y: 0.75 };
+    expect(decodeMessage(encodeMessage(signal))).toEqual(signal);
+    expect(decodeMessage(encodeMessage(desktopPing))).toEqual(desktopPing);
+  });
+
+  it('rejects oversized, misnumbered, or malformed desktop messages', () => {
+    const signal = { ...base, t: 'desktop-signal', to, id: share, part: 0, total: 1, data: 'x' };
+    for (const bad of [{ ...signal, data: 'x'.repeat(481) }, { ...signal, part: 1 }, { ...signal, total: 65 }, { ...signal, to: 'bad' }]) {
+      expect(validateMessage(bad)).toBeNull();
+    }
+    const desktopPing = { ...base, t: 'desktop-ping', to, share, ping: 'assist', d: 2, x: 0.25, y: 0.75 };
+    for (const bad of [{ ...desktopPing, share: 'bad' }, { ...desktopPing, d: 17 }, { ...desktopPing, x: -1 }]) {
+      expect(validateMessage(bad)).toBeNull();
+    }
+  });
+});
+
 describe('validateMessage', () => {
   it.each([
     ['unknown type', { ...presence, t: 'hello' }],

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { open, seal, type RoomKeys } from '../../src/main/roomCrypto';
+import { MAX_PACKET, open, seal, type RoomKeys } from '../../src/main/roomCrypto';
 import { RoomManager, type RemoteEmote, type RemotePing, type RoomToast } from '../../src/main/roomManager';
 import { formatRoomCode, makeRoomCode } from '../../src/shared/roomCode';
 import { decodeMessage, encodeMessage, type RoomMessage } from '../../src/shared/roomProtocol';
@@ -75,6 +75,35 @@ beforeEach(() => {
 afterEach(() => {
   room.quit();
   vi.useRealTimers();
+});
+
+describe('LAN desktop sharing', () => {
+  it('sends bounded signaling only to a member with a live LAN path', async () => {
+    await joinActive();
+    const remote = new Remote('1111111111111111', 'lan:peer:47474', lan);
+    room.sendDesktopSignal(remote.peer, 'offer');
+    expect(sentMessages(remote.key).filter((m) => m.t === 'desktop-signal')).toHaveLength(0);
+    remote.presence();
+    const before = lan.sent.length;
+    room.sendDesktopSignal(remote.peer, 'x'.repeat(1300));
+    const messages = lan.sent.slice(before).map((s) => ({ to: s.to, message: decodeMessage(open(KEYS.msgKey, s.packet)!)! }));
+    expect(messages).toHaveLength(6); // three chunks, each repeated once for UDP loss
+    expect(messages.every((m) => m.to === remote.key && m.message.t === 'desktop-signal')).toBe(true);
+    expect(messages.map((m) => (m.message as { part: number }).part)).toEqual([0, 0, 1, 1, 2, 2]);
+    expect(() => room.sendDesktopSignal(remote.peer, '\\'.repeat(480))).not.toThrow();
+    expect(lan.sent.every((s) => s.packet.length <= MAX_PACKET)).toBe(true);
+  });
+
+  it('accepts targeted LAN pings and ignores a different target', async () => {
+    await joinActive();
+    const remote = new Remote('1111111111111111', 'lan:peer:47474', lan);
+    const received: unknown[] = [];
+    room.on('desktopPing', (p: unknown) => received.push(p));
+    remote.presence();
+    lan.deliver(remote.key, remote.packet({ t: 'desktop-ping', to: '2222222222222222', share: '3333333333333333', ping: 'assist', d: 1, x: 0.2, y: 0.3 }));
+    lan.deliver(remote.key, remote.packet({ t: 'desktop-ping', to: room.self, share: '3333333333333333', ping: 'assist', d: 1, x: 0.2, y: 0.3 }));
+    expect(received).toMatchObject([{ from: remote.peer, ping: 'assist', x: 0.2, y: 0.3 }]);
+  });
 });
 
 describe('joining', () => {
@@ -518,6 +547,22 @@ describe('two transports', () => {
     await vi.advanceTimersByTimeAsync(3000);
   });
   afterEach(() => both.quit());
+
+  it('never routes desktop signaling or preview pings through the internet relay', () => {
+    const peer = '1111111111111111';
+    const online = new Remote(peer, 'relay:member', net);
+    const received: unknown[] = [];
+    both.on('desktopPing', (p: unknown) => received.push(p));
+    both.on('desktopSignal', (p: unknown) => received.push(p));
+    online.presence();
+    const before = net.sent.length;
+    both.sendDesktopSignal(peer, 'offer');
+    both.sendDesktopPing(peer, '2222222222222222', 'assist', 1, 0.4, 0.5);
+    expect(net.sent).toHaveLength(before);
+    net.deliver(online.key, online.packet({ t: 'desktop-signal', to: both.self, id: '3333333333333333', part: 0, total: 1, data: 'offer' }));
+    net.deliver(online.key, online.packet({ t: 'desktop-ping', to: both.self, share: '2222222222222222', ping: 'assist', d: 1, x: 0.4, y: 0.5 }));
+    expect(received).toEqual([]);
+  });
 
   it('uses LAN while it is alive, falls back to the internet, and returns to LAN', async () => {
     const alex = new Remote('1111111111111111', 'lan:a', lan);
