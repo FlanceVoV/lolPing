@@ -33,14 +33,18 @@ function peer(port: number, other: number, name: string) {
   const pings: RemotePing[] = [];
   const signals: { from: string; part: number; total: number; data: string }[] = [];
   const desktopPings: { from: string; ping: string; d: number; x: number; y: number }[] = [];
+  const desktopEmotes: { from: string; e: string; d: number; x: number; y: number }[] = [];
+  const desktopTexts: { from: string; note: { text: string; color: string; size: number }; d: number; x: number; y: number }[] = [];
   const toasts: RoomToast[] = [];
   let packets = 0;
   lan.on('packet', () => packets++);
   room.on('remotePing', (p: RemotePing) => pings.push(p));
   room.on('desktopSignal', (s) => signals.push(s));
   room.on('desktopPing', (p) => desktopPings.push(p));
+  room.on('desktopEmote', (p) => desktopEmotes.push(p));
+  room.on('desktopText', (p) => desktopTexts.push(p));
   room.on('toast', (t: RoomToast) => toasts.push(t));
-  return { lan, room, pings, signals, desktopPings, toasts, packets: () => packets };
+  return { lan, room, pings, signals, desktopPings, desktopEmotes, desktopTexts, toasts, packets: () => packets };
 }
 
 let open: ReturnType<typeof peer>[] = [];
@@ -63,6 +67,11 @@ describe('two rooms over loopback UDP', () => {
     b.room.sendDesktopPing(a.room.self, '1111111111111111', 'assist', 1, 0.4, 0.6);
     await until(() => a.desktopPings.length === 1);
     expect(a.desktopPings[0]).toMatchObject({ from: b.room.self, ping: 'assist', d: 1, x: 0.4, y: 0.6 });
+    b.room.sendDesktopEmote(a.room.self, '1111111111111111', 'bee_happy', 1, 0.2, 0.3);
+    b.room.sendDesktopText(a.room.self, '1111111111111111', { text: '快来\n这里', color: '#ffcc00', size: 48 }, 1, 0.7, 0.8);
+    await until(() => a.desktopEmotes.length === 1 && a.desktopTexts.length === 1);
+    expect(a.desktopEmotes[0]).toMatchObject({ from: b.room.self, e: 'bee_happy', d: 1, x: 0.2, y: 0.3 });
+    expect(a.desktopTexts[0]).toMatchObject({ from: b.room.self, note: { text: '快来\n这里', color: '#ffcc00', size: 48 }, d: 1, x: 0.7, y: 0.8 });
   });
 
   it('find each other, exchange pings, survive a rebind and see a leave', async () => {

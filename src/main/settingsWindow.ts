@@ -4,6 +4,14 @@ import { assetPath, IS_MAC, loadPage, pageUrl, preloadPath } from './paths';
 
 let win: BrowserWindow | null = null;
 const goneListeners: Array<() => void> = [];
+let keepAlive = (): boolean => false;
+let quitting = false;
+app.on('before-quit', () => { quitting = true; });
+
+/** A room can keep the renderer alive for screen sharing after the visible window is closed. */
+export function setSettingsWindowKeepAlive(check: () => boolean): void {
+  keepAlive = check;
+}
 
 /**
  * Registers `cb` (once, for the app's lifetime) to run whenever the settings window closes or its renderer process
@@ -69,15 +77,16 @@ export function settingsWindow(): BrowserWindow | null {
   return win && !win.isDestroyed() ? win : null;
 }
 
-/** `section`: the id of a settings section to scroll to, e.g. 'room'. */
-export function openSettingsWindow(section?: string): BrowserWindow {
+function getOrCreateSettingsWindow(visible: boolean, section?: string): BrowserWindow {
   const existing = settingsWindow();
   if (existing) {
-    showInDock(true);
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
-    if (section) existing.webContents.send(SETTINGS_CH.showSection, section);
+    if (visible) {
+      showInDock(true);
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      if (section) existing.webContents.send(SETTINGS_CH.showSection, section);
+    }
     return existing;
   }
   const w = new BrowserWindow({
@@ -89,13 +98,20 @@ export function openSettingsWindow(section?: string): BrowserWindow {
     icon: nativeImage.createFromPath(assetPath('textures', 'generic_ping.png')),
     show: false,
     ...chromeOptions(),
-    webPreferences: { preload: preloadPath('settings'), spellcheck: false },
+    webPreferences: { preload: preloadPath('settings'), spellcheck: false, backgroundThrottling: false },
   });
   if (!IS_MAC) w.removeMenu(); // no menu bar, so pressing Alt in the window does nothing (macOS keeps the app menu)
   const onTheme = () => {
     if (!w.isDestroyed() && !IS_MAC) w.setTitleBarOverlay(captionColors());
   };
   nativeTheme.on('updated', onTheme);
+  w.on('close', (event) => {
+    if (!quitting && keepAlive()) {
+      event.preventDefault();
+      w.hide();
+      showInDock(false);
+    }
+  });
   w.on('closed', () => {
     nativeTheme.off('updated', onTheme);
     win = null;
@@ -110,10 +126,22 @@ export function openSettingsWindow(section?: string): BrowserWindow {
   });
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.once('ready-to-show', () => {
-    showInDock(true);
-    w.show();
+    if (visible) {
+      showInDock(true);
+      w.show();
+    }
   });
   void loadPage(w, 'settings', section);
   win = w;
   return w;
+}
+
+/** `section`: the id of a settings section to scroll to, e.g. 'room'. */
+export function openSettingsWindow(section?: string): BrowserWindow {
+  return getOrCreateSettingsWindow(true, section);
+}
+
+/** Starts the room renderer without opening a visible settings window. */
+export function ensureBackgroundSettingsWindow(): BrowserWindow {
+  return getOrCreateSettingsWindow(false);
 }

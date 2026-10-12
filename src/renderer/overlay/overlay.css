@@ -1,5 +1,19 @@
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none; }
-#pings, #emotes, #toasts { position: fixed; inset: 0; pointer-events: none; }
+#pings, #emotes, #texts, #toasts { position: fixed; inset: 0; pointer-events: none; }
+
+.desktopText {
+  position: absolute; width: max-content; max-width: min(70vw, 800px); transform: translate(-50%, -50%);
+  text-align: center; color: var(--text-color); font: 700 var(--text-size)/1.25 "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  text-shadow: 0 2px 4px #000, 0 0 12px #000, 1px 0 #000, -1px 0 #000;
+  animation: desktopTextIn .2s ease-out both, desktopTextOut .45s ease-in 5.55s forwards;
+}
+.desktopTextWords { white-space: pre-wrap; overflow-wrap: anywhere; }
+.desktopText small {
+  display: block; width: fit-content; max-width: 100%; margin: 6px auto 0; padding: 2px 8px; border-radius: 4px;
+  color: #fff; background: rgba(8, 12, 16, .72); font: 600 13px/18px "Segoe UI", sans-serif;
+}
+@keyframes desktopTextIn { from { opacity: 0; scale: .85 } to { opacity: 1; scale: 1 } }
+@keyframes desktopTextOut { to { opacity: 0; scale: .95 } }
 
 /* ---------- wheel ---------- */
 #wheel, #emoteWheel {

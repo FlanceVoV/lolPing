@@ -1,5 +1,6 @@
 import { globalShortcut, ipcMain, shell } from 'electron';
 import { isCustomRef, isEmoteRefShape, type EmoteRef, type ImportResult } from '../shared/emotes';
+import { isDesktopText, type DesktopText } from '../shared/desktopText';
 import type { Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type SetSettingsResult } from '../shared/ipc';
 import { hotkeyLabel, hotkeyToAccelerator, type Hotkey } from '../shared/keys';
@@ -51,10 +52,12 @@ export interface SettingsIpcDeps {
     clipboardCode(): Promise<string | null>;
     copyCode(): void;
     retryInternet(): void;
-    prepareDesktopShare(display: number): Promise<boolean>;
+    prepareDesktopShare(display: number): Promise<string | null>;
     setDesktopShare(share: { display: number; token: string } | null): void;
     sendDesktopSignal(peer: string, data: string): void;
     sendDesktopPing(peer: string, share: string, ping: PingId, display: number, x: number, y: number): void;
+    sendDesktopEmote(peer: string, share: string, emote: EmoteRef, display: number, x: number, y: number): void;
+    sendDesktopText(peer: string, share: string, note: DesktopText, display: number, x: number, y: number): void;
   };
 }
 
@@ -140,7 +143,7 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   const fromSettings = (sender: Electron.WebContents): boolean => sender === settingsWindow()?.webContents;
   ipcMain.handle(SETTINGS_CH.desktopPrepare, (e, display: unknown) =>
     fromSettings(e.sender) && Number.isInteger(display) && (display as number) >= 1 && (display as number) <= 16
-      ? d.room.prepareDesktopShare(display as number) : false);
+      ? d.room.prepareDesktopShare(display as number) : null);
   ipcMain.handle(SETTINGS_CH.desktopShare, (e, raw: unknown) => {
     if (!fromSettings(e.sender)) return;
     if (raw === null) return d.room.setDesktopShare(null);
@@ -162,6 +165,23 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
       || typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1
       || typeof y !== 'number' || !Number.isFinite(y) || y < 0 || y > 1) return;
     d.room.sendDesktopPing(peer, share, ping, display as number, x, y);
+  });
+  ipcMain.handle(SETTINGS_CH.desktopEmote, (e, peer: unknown, share: unknown, emote: unknown, display: unknown, x: unknown, y: unknown) => {
+    if (!fromSettings(e.sender) || typeof peer !== 'string' || !/^[0-9a-f]{16}$/.test(peer)
+      || typeof share !== 'string' || !/^[0-9a-f]{16}$/.test(share) || !isEmoteRefShape(emote)
+      || ![...d.store.get().emoteWheel, d.store.get().clickEmoteId].includes(emote)
+      || !Number.isInteger(display) || (display as number) < 1 || (display as number) > 16
+      || typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1
+      || typeof y !== 'number' || !Number.isFinite(y) || y < 0 || y > 1) return;
+    d.room.sendDesktopEmote(peer, share, emote, display as number, x, y);
+  });
+  ipcMain.handle(SETTINGS_CH.desktopText, (e, peer: unknown, share: unknown, note: unknown, display: unknown, x: unknown, y: unknown) => {
+    if (!fromSettings(e.sender) || typeof peer !== 'string' || !/^[0-9a-f]{16}$/.test(peer)
+      || typeof share !== 'string' || !/^[0-9a-f]{16}$/.test(share) || !isDesktopText(note)
+      || !Number.isInteger(display) || (display as number) < 1 || (display as number) > 16
+      || typeof x !== 'number' || !Number.isFinite(x) || x < 0 || x > 1
+      || typeof y !== 'number' || !Number.isFinite(y) || y < 0 || y > 1) return;
+    d.room.sendDesktopText(peer, share, note, display as number, x, y);
   });
 
   ipcMain.handle(SETTINGS_CH.updateGet, (): UpdateState | null => d.update?.state() ?? null);

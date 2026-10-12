@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { EmoteRef } from '../shared/emotes';
+import type { DesktopText } from '../shared/desktopText';
 import type { PingId } from '../shared/pings';
 import type { JoinResult, MemberPath, RoomMember, RoomStateCore } from '../shared/room';
 import { formatRoomCode, makeRoomCode, parseRoomCode } from '../shared/roomCode';
@@ -194,6 +195,14 @@ export class RoomManager extends EventEmitter {
 
   sendDesktopPing(to: string, share: string, ping: PingId, d: number, x: number, y: number): void {
     this.sendLan(to, { t: 'desktop-ping', to, share, ping, d, x, y });
+  }
+
+  sendDesktopEmote(to: string, share: string, e: EmoteRef, d: number, x: number, y: number): void {
+    this.sendLan(to, { t: 'desktop-emote', to, share, e, d, x, y });
+  }
+
+  sendDesktopText(to: string, share: string, note: DesktopText, d: number, x: number, y: number): void {
+    this.sendLan(to, { t: 'desktop-text', to, share, note, d, x, y });
   }
 
   private sendLan(to: string, body: Record<string, unknown>): void {
@@ -416,6 +425,14 @@ export class RoomManager extends EventEmitter {
     if (!this.limiter.allow(m.peer, this.deps.profile().limit)) return;
     if (msg.t === 'desktop-ping') {
       if (t.kind === 'lan' && msg.to === this.self) this.emit('desktopPing', { from: m.peer, ping: msg.ping, share: msg.share, d: msg.d, x: msg.x, y: msg.y, tag: { name: m.name, color: m.color } });
+      return;
+    }
+    if (msg.t === 'desktop-emote') {
+      if (t.kind === 'lan' && msg.to === this.self) this.emit('desktopEmote', { from: m.peer, e: msg.e, share: msg.share, d: msg.d, x: msg.x, y: msg.y, tag: { name: m.name, color: m.color } });
+      return;
+    }
+    if (msg.t === 'desktop-text') {
+      if (t.kind === 'lan' && msg.to === this.self) this.emit('desktopText', { from: m.peer, note: msg.note, share: msg.share, d: msg.d, x: msg.x, y: msg.y, tag: { name: m.name, color: m.color } });
       return;
     }
     const target = this.deps.resolveTarget(msg.d);

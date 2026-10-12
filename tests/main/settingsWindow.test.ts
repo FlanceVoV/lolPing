@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
   class FakeWindow extends Emitter {
     webContents = new FakeContents();
     destroyed = false;
+    visible = false;
     constructor() {
       super();
       windows.push(this);
@@ -27,15 +28,19 @@ vi.mock('electron', async () => {
       return false;
     }
     restore(): void {}
-    show(): void {}
+    show(): void { this.visible = true; }
+    hide(): void { this.visible = false; }
     focus(): void {}
     close(): void {
+      const event = { preventDefault: vi.fn() };
+      this.emit('close', event);
+      if (event.preventDefault.mock.calls.length) return;
       this.destroyed = true;
       this.emit('closed');
     }
   }
   const nativeTheme = Object.assign(new Emitter(), { shouldUseDarkColors: false });
-  return { BrowserWindow: FakeWindow, nativeImage: { createFromPath: () => ({}) }, nativeTheme };
+  return { app: new Emitter(), BrowserWindow: FakeWindow, nativeImage: { createFromPath: () => ({}) }, nativeTheme };
 });
 
 vi.mock('../../src/main/paths', () => ({
@@ -47,7 +52,7 @@ vi.mock('../../src/main/paths', () => ({
 }));
 
 type FakeContents = EventEmitter & { openHandler: ((details: { url: string }) => { action: string }) | null };
-type FakeWindow = EventEmitter & { webContents: FakeContents; close(): void };
+type FakeWindow = EventEmitter & { webContents: FakeContents; close(): void; visible: boolean; destroyed: boolean };
 type Mod = typeof import('../../src/main/settingsWindow');
 let mod: Mod;
 
@@ -58,6 +63,19 @@ beforeEach(async () => {
 });
 
 describe('onSettingsWindowGone', () => {
+  it('keeps an active room renderer running when the visible settings window is closed', () => {
+    const cb = vi.fn();
+    mod.onSettingsWindowGone(cb);
+    mod.setSettingsWindowKeepAlive(() => true);
+    const background = mod.ensureBackgroundSettingsWindow();
+    expect((background as unknown as FakeWindow).visible).toBe(false);
+    expect(mod.openSettingsWindow()).toBe(background);
+    (background as unknown as FakeWindow).close();
+    expect((background as unknown as FakeWindow).visible).toBe(false);
+    expect((background as unknown as FakeWindow).destroyed).toBe(false);
+    expect(cb).not.toHaveBeenCalled();
+  });
+
   it('fires when the window closes', () => {
     const cb = vi.fn();
     mod.onSettingsWindowGone(cb);

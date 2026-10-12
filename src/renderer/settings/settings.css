@@ -123,7 +123,27 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 .desktopHeader .lbl { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .desktopControls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .desktopControls select { color: inherit; background: var(--colorNeutralBackground1); border: 1px solid var(--colorNeutralStroke1); border-radius: 4px; padding: 6px 8px; }
-.desktopViews { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; width: 100%; }
-.desktopView { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.desktopView video { display: block; width: 100%; height: auto; background: #101010; border-radius: 6px; cursor: crosshair; }
+.desktopComposer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.desktopComposer textarea { width: 220px; max-width: 100%; min-height: 42px; resize: vertical; box-sizing: border-box; color: inherit; background: var(--colorNeutralBackground1); border: 1px solid var(--colorNeutralStroke1); border-radius: 4px; padding: 6px 8px; font: inherit; }
+.desktopColorLabel, .desktopSizeLabel { display: inline-flex; align-items: center; gap: 5px; }
+.desktopColorLabel input { width: 34px; height: 30px; padding: 1px; border: 0; background: transparent; cursor: pointer; }
+.desktopComposerError { color: #d13636; font-size: 12px; }
+.desktopViews { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; width: 100%; }
+.desktopView { display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: #0d1119; border: 1px solid var(--stroke); border-radius: 8px; }
+.desktopViewHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; color: #fff; font-size: 12px; }
+.desktopViewHead b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktopViewHead button { flex: none; border: 0; background: rgba(255,255,255,.12); color: #fff; border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit; }
+.desktopViewHead button:hover { background: rgba(255,255,255,.22); }
+.desktopView video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #05070b; cursor: crosshair; }
+.desktopViews.wallOpen { position: fixed; inset: 0; z-index: 1000; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-content: start; padding: 20px; box-sizing: border-box; background: #090d14; overflow: auto; }
+.desktopWallBar { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: #fff; }
+.desktopWallBar strong { font-size: 18px; margin-right: 6px; }
+.desktopWallBar span { color: rgba(255,255,255,.65); font-size: 12px; margin-right: auto; }
+.desktopWallBar select, .desktopWallBar button { background: #202a38; color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 7px 10px; font: inherit; }
+.desktopWallBar textarea { background: #202a38; color: #fff; border: 1px solid rgba(255,255,255,.25); }
+.desktopWallBar .desktopComposerError { color: #ff8d8d; }
+.desktopWallBar button { cursor: pointer; }
+.desktopViews.wallOpen.focused { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.desktopView.expanded { height: 100%; min-height: 0; }
+.desktopView.expanded video { flex: 1; min-height: 0; height: calc(100% - 40px); aspect-ratio: auto; }
 @media (max-width: 760px) { .desktopHeader { flex-direction: column; } }

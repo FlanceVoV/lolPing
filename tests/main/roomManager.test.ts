@@ -548,19 +548,25 @@ describe('two transports', () => {
   });
   afterEach(() => both.quit());
 
-  it('never routes desktop signaling or preview pings through the internet relay', () => {
+  it('never routes desktop signaling or markers through the internet relay', () => {
     const peer = '1111111111111111';
     const online = new Remote(peer, 'relay:member', net);
     const received: unknown[] = [];
     both.on('desktopPing', (p: unknown) => received.push(p));
+    both.on('desktopEmote', (p: unknown) => received.push(p));
+    both.on('desktopText', (p: unknown) => received.push(p));
     both.on('desktopSignal', (p: unknown) => received.push(p));
     online.presence();
     const before = net.sent.length;
     both.sendDesktopSignal(peer, 'offer');
     both.sendDesktopPing(peer, '2222222222222222', 'assist', 1, 0.4, 0.5);
+    both.sendDesktopEmote(peer, '2222222222222222', 'bee_happy', 1, 0.4, 0.5);
+    both.sendDesktopText(peer, '2222222222222222', { text: 'hello', color: '#ffcc00', size: 36 }, 1, 0.4, 0.5);
     expect(net.sent).toHaveLength(before);
     net.deliver(online.key, online.packet({ t: 'desktop-signal', to: both.self, id: '3333333333333333', part: 0, total: 1, data: 'offer' }));
     net.deliver(online.key, online.packet({ t: 'desktop-ping', to: both.self, share: '2222222222222222', ping: 'assist', d: 1, x: 0.4, y: 0.5 }));
+    net.deliver(online.key, online.packet({ t: 'desktop-emote', to: both.self, share: '2222222222222222', e: 'bee_happy', d: 1, x: 0.4, y: 0.5 }));
+    net.deliver(online.key, online.packet({ t: 'desktop-text', to: both.self, share: '2222222222222222', note: { text: 'hello', color: '#ffcc00', size: 36 }, d: 1, x: 0.4, y: 0.5 }));
     expect(received).toEqual([]);
   });
 

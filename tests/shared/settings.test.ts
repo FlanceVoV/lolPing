@@ -10,6 +10,11 @@ import {
 describe('normalizeSettings', () => {
   it('returns defaults for missing or non-object input', () => {
     for (const raw of [undefined, null, 42, 'x', [1, 2]]) expect(normalizeSettings(raw)).toEqual(DEFAULT_SETTINGS);
+    expect(DEFAULT_SETTINGS.autoShareDesktop).toBe(true);
+    expect(normalizeSettings({ autoShareDesktop: false }).autoShareDesktop).toBe(false);
+    expect(DEFAULT_SETTINGS.desktopResolution).toBe('native');
+    expect(normalizeSettings({ desktopResolution: '720p' }).desktopResolution).toBe('720p');
+    expect(normalizeSettings({ desktopResolution: '8k' }).desktopResolution).toBe('native');
   });
 
   it('keeps valid values', () => {

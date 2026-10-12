@@ -18,6 +18,11 @@ export type TriggerKey = NamedTrigger | { vk: number };
 /** The emote key is a trigger key, or 'off': then the emote wheel is off and can't be opened (nor can emote click). */
 export type EmoteTriggerKey = TriggerKey | 'off';
 export const NAMED_TRIGGERS: readonly NamedTrigger[] = ['alt', 'ctrl', 'shift', 'win', 'capslock', 'mouse4', 'mouse5'];
+export const DESKTOP_RESOLUTIONS = ['360p', '480p', '540p', '720p', '900p', '1080p', '1440p', '2160p', 'native'] as const;
+export type DesktopResolution = typeof DESKTOP_RESOLUTIONS[number];
+
+export const isDesktopResolution = (value: unknown): value is DesktopResolution =>
+  typeof value === 'string' && (DESKTOP_RESOLUTIONS as readonly string[]).includes(value);
 
 /** Keyboard triggers offered on each platform. macOS can't reliably stop Caps Lock from toggling, so it isn't offered. */
 export const keyboardTriggers = (platform: Platform): NamedTrigger[] =>
@@ -51,6 +56,10 @@ export interface Settings {
   incomingPingLimit: number;
   allowInternet: boolean;
   rejoinRoom: boolean;
+  /** Share the primary display automatically while in a room. */
+  autoShareDesktop: boolean;
+  /** Maximum video height while sharing; native keeps the display's original dimensions. */
+  desktopResolution: DesktopResolution;
   /** Canonical code of the room to rejoin on launch. */
   lastRoomCode: string | null;
   roomMuted: boolean;
@@ -99,6 +108,8 @@ export const DEFAULT_SETTINGS: Settings = {
   incomingPingLimit: 5,
   allowInternet: true,
   rejoinRoom: true,
+  autoShareDesktop: true,
+  desktopResolution: 'native',
   lastRoomCode: null,
   roomMuted: false,
   emoteTrigger: 'ctrl',
@@ -123,7 +134,7 @@ export const LIMITS = {
 
 type NumKey = keyof typeof LIMITS;
 type BoolKey = 'enabledOnStart' | 'clickPing' | 'gameCheck' | 'muted' | 'tickSound' | 'launchAtStartup' | 'allowInternet' | 'rejoinRoom' | 'roomMuted'
-  | 'emoteClick' | 'emoteSound' | 'autoUpdateCheck';
+  | 'autoShareDesktop' | 'emoteClick' | 'emoteSound' | 'autoUpdateCheck';
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isVk = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 254;
@@ -237,6 +248,8 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
     incomingPingLimit: num(r.incomingPingLimit, 'incomingPingLimit'),
     allowInternet: bool(r.allowInternet, 'allowInternet'),
     rejoinRoom: bool(r.rejoinRoom, 'rejoinRoom'),
+    autoShareDesktop: bool(r.autoShareDesktop, 'autoShareDesktop'),
+    desktopResolution: isDesktopResolution(r.desktopResolution) ? r.desktopResolution : DEFAULT_SETTINGS.desktopResolution,
     lastRoomCode: roomCode(r.lastRoomCode),
     roomMuted: bool(r.roomMuted, 'roomMuted'),
     emoteTrigger: triggersClash(pingTrigger, emote, toggleHotkey) ? 'off' : emote,

@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, screen, type Display, type WebContents } from 'electron';
 import { EventEmitter } from 'node:events';
 import { isEmoteRefShape, type EmoteArt, type EmoteRef } from '../shared/emotes';
+import type { DesktopText } from '../shared/desktopText';
 import {
   OVERLAY_ASSETS, OVERLAY_EMOTED, OVERLAY_PINGED, type OverlayChannel, type OverlayEvents, type PingTag,
 } from '../shared/ipc';
@@ -139,6 +140,10 @@ export class OverlayManager extends EventEmitter {
   spawnRemoteEmote(p: { displayId: number; x: number; y: number; ref: EmoteRef; peer: string; tag: PingTag }): void {
     this.send(p.displayId, 'emote:spawn', { owner: p.peer, art: this.resolveArt(p.ref, true), x: p.x, y: p.y, tag: p.tag });
     this.clearElsewhere(p.displayId, p.peer);
+  }
+
+  spawnRemoteText(p: { displayId: number; x: number; y: number; note: DesktopText; tag: PingTag }): void {
+    this.send(p.displayId, 'text:spawn', { x: p.x, y: p.y, note: p.note, tag: p.tag });
   }
 
   /** This machine's displays with their room numbers (#1 = primary). */

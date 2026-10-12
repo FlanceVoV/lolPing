@@ -1,4 +1,4 @@
-import { app, clipboard, desktopCapturer, dialog, Menu, powerMonitor, screen, session, shell, systemPreferences, webContents, type DesktopCapturerSource } from 'electron';
+import { app, clipboard, desktopCapturer, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
 import { randomBytes, randomInt } from 'node:crypto';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +23,7 @@ import { deriveRoomKeys } from './roomCrypto';
 import { RoomManager, type RoomToast } from './roomManager';
 import { registerSettingsIpc } from './settingsIpc';
 import { SettingsStore } from './settingsStore';
-import { onSettingsWindowGone, openSettingsWindow, settingsWindow } from './settingsWindow';
+import { ensureBackgroundSettingsWindow, onSettingsWindowGone, openSettingsWindow, setSettingsWindowKeepAlive, settingsWindow } from './settingsWindow';
 import { AppTray, trayUpdateFrom, type TrayMode } from './tray';
 import { trayUpdateHandlers } from './trayUpdate';
 import { MacBackend, RELEASES_API } from './updateMac';
@@ -142,17 +142,8 @@ function start(): void {
       return target ? { displayId: target.id, width: target.bounds.width, height: target.bounds.height } : null;
     },
   });
-  let preparedCapture: DesktopCapturerSource | null = null;
-  let captureRequest = 0;
+  setSettingsWindowKeepAlive(() => room.state().phase !== 'idle' && settings.autoShareDesktop);
   let activeShare: { display: number; token: string } | null = null;
-  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    const prepared = preparedCapture;
-    preparedCapture = null; // each click authorizes exactly one capture request
-    if (prepared && request.frame && request.userGesture
-      && webContents.fromFrame(request.frame) === settingsWindow()?.webContents && request.videoRequested) {
-      callback({ video: prepared });
-    } else callback({});
-  });
   const roomState = (): RoomState => {
     const all = screen.getAllDisplays();
     return {
@@ -254,6 +245,7 @@ function start(): void {
     if (quitting) return;
     const s = roomState();
     tray.setRoom({ code: s.code, count: s.members.length, muted: settings.roomMuted });
+    if (s.phase !== 'idle' && settings.autoShareDesktop) ensureBackgroundSettingsWindow();
     settingsWindow()?.webContents.send(SETTINGS_CH.roomChanged, s);
   }
   const syncRoomFlags = (): void => room.setStatusFlags({ paused: !enabled, roomMuted: settings.roomMuted });
@@ -266,8 +258,18 @@ function start(): void {
     const display = overlays.numbered().find((d) => d.number === p.d);
     if (display) overlays.spawnRemote({ displayId: display.id, x: p.x * display.bounds.width, y: p.y * display.bounds.height, id: p.ping, tag: p.tag });
   });
+  room.on('desktopEmote', (p: { from: string; share: string; d: number; x: number; y: number; e: import('../shared/emotes').EmoteRef; tag: { name: string; color: number } }) => {
+    if (!activeShare || p.share !== activeShare.token || p.d !== activeShare.display) return;
+    const display = overlays.numbered().find((d) => d.number === p.d);
+    if (display) overlays.spawnRemoteEmote({ displayId: display.id, x: p.x * display.bounds.width, y: p.y * display.bounds.height, ref: p.e, peer: p.from, tag: p.tag });
+  });
+  room.on('desktopText', (p: { share: string; d: number; x: number; y: number; note: import('../shared/desktopText').DesktopText; tag: { name: string; color: number } }) => {
+    if (!activeShare || p.share !== activeShare.token || p.d !== activeShare.display) return;
+    const display = overlays.numbered().find((d) => d.number === p.d);
+    if (display) overlays.spawnRemoteText({ displayId: display.id, x: p.x * display.bounds.width, y: p.y * display.bounds.height, note: p.note, tag: p.tag });
+  });
   room.on('state', (s: RoomState) => {
-    if (s.phase === 'idle') { activeShare = null; preparedCapture = null; captureRequest++; }
+    if (s.phase === 'idle') activeShare = null;
   });
   overlays.on('shared', (p: SharedPing) => {
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
@@ -349,6 +351,7 @@ function start(): void {
     if (s.language !== previous.language) tray.setText(text());
     if (s.displayName !== previous.displayName || s.tagColor !== previous.tagColor) room.profileChanged();
     if (s.autoUpdateCheck !== previous.autoUpdateCheck) updater?.setAutoCheck(s.autoUpdateCheck);
+    if (s.autoShareDesktop && !previous.autoShareDesktop && room.state().phase !== 'idle') ensureBackgroundSettingsWindow();
     if (s.roomMuted !== previous.roomMuted) {
       syncRoomFlags();
       pushRoom();
@@ -396,27 +399,24 @@ function start(): void {
       copyCode: copyRoomCode,
       retryInternet: () => relay.retryNow(),
       prepareDesktopShare: async (display) => {
-        if (room.state().phase === 'idle') return false;
-        const request = ++captureRequest;
+        if (room.state().phase === 'idle') return null;
         const chosen = overlays.numbered().find((d) => d.number === display);
-        if (!chosen) return false;
+        if (!chosen) return null;
         const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
-        if (request !== captureRequest || room.state().phase === 'idle') return false;
+        if (room.state().phase === 'idle') return null;
         const source = sources.find((s) => s.display_id === String(chosen.id));
-        if (!source) return false;
-        preparedCapture = source;
-        return true;
+        return source?.id ?? null;
       },
       setDesktopShare: (share) => { activeShare = share; },
       sendDesktopSignal: (peer, data) => room.sendDesktopSignal(peer, data),
       sendDesktopPing: (peer, share, ping, display, x, y) => room.sendDesktopPing(peer, share, ping, display, x, y),
+      sendDesktopEmote: (peer, share, emote, display, x, y) => room.sendDesktopEmote(peer, share, emote, display, x, y),
+      sendDesktopText: (peer, share, note, display, x, y) => room.sendDesktopText(peer, share, note, display, x, y),
     },
   });
   // The page can't report that it went away mid-capture (window closed, renderer crashed): release the suspend here.
   onSettingsWindowGone(() => {
     activeShare = null;
-    preparedCapture = null;
-    captureRequest++;
     if (!capturing) return;
     capturing = false;
     bridge.send({ type: 'suspend', on: false });

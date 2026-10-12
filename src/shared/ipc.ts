@@ -1,4 +1,5 @@
 import type { EmoteArt, EmoteFile, EmoteRef, ImportResult } from './emotes';
+import type { DesktopText } from './desktopText';
 import type { PingId } from './pings';
 import type { Platform } from './platform';
 import type { HelperStatus, WheelKind } from './protocol';
@@ -30,13 +31,14 @@ export interface OverlayEvents {
   /** `owner` is 'self', 'preview' or a room member: each owner has at most one emote on screen. */
   'emote:spawn': Point & { owner: string; art: EmoteArt; tag?: PingTag };
   'emote:clear': { owner: string };
+  'text:spawn': Point & { note: DesktopText; tag: PingTag };
   'toast:show': { title: string; body: string };
 }
 
 export type OverlayChannel = keyof OverlayEvents;
 
 export const OVERLAY_CHANNELS: readonly OverlayChannel[] = [
-  'overlay:settings', 'wheel:open', 'wheel:move', 'wheel:release', 'wheel:cancel', 'ping:spawn', 'emote:spawn', 'emote:clear',
+  'overlay:settings', 'wheel:open', 'wheel:move', 'wheel:release', 'wheel:cancel', 'ping:spawn', 'emote:spawn', 'emote:clear', 'text:spawn',
   'toast:show',
 ];
 
@@ -104,13 +106,15 @@ export interface SettingsApi {
   copyRoomCode(): Promise<void>;
   /** Reconnects to every relay now (the Room page's Retry). */
   retryInternet(): Promise<void>;
-  /** Selects one of our displays for an explicit screen-capture request. */
-  prepareDesktopShare(display: number): Promise<boolean>;
+  /** Returns a screen source ID for this settings window while joined to a room. */
+  prepareDesktopShare(display: number): Promise<string | null>;
   /** Registers the active capture so only its screen accepts remote pings. Null stops sharing. */
   setDesktopShare(share: { display: number; token: string } | null): Promise<void>;
   sendDesktopSignal(peer: string, data: string): Promise<void>;
   onDesktopSignal(cb: (signal: { from: string; id: string; part: number; total: number; data: string }) => void): () => void;
   sendDesktopPing(peer: string, share: string, ping: PingId, display: number, x: number, y: number): Promise<void>;
+  sendDesktopEmote(peer: string, share: string, emote: EmoteRef, display: number, x: number, y: number): Promise<void>;
+  sendDesktopText(peer: string, share: string, note: DesktopText, display: number, x: number, y: number): Promise<void>;
   /** The main process asks to scroll to a section (e.g. tray → Room settings…). */
   onShowSection(cb: (id: string) => void): () => void;
   /** Where the update checker is, or null when this build has none (a development build): then the page shows no update controls. */

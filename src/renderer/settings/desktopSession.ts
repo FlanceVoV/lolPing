@@ -1,6 +1,11 @@
 import type { RoomState } from '../../shared/room';
 import { DESKTOP_SIGNAL_CHUNK, MAX_DESKTOP_SIGNAL } from '../../shared/roomProtocol';
 import { api } from './api';
+import type { DesktopText } from '../../shared/desktopText';
+import type { EmoteRef } from '../../shared/emotes';
+import type { PingId } from '../../shared/pings';
+
+export type DesktopSend = { kind: 'ping'; id: PingId } | { kind: 'emote'; ref: EmoteRef } | { kind: 'text'; note: DesktopText };
 
 export interface DesktopView {
   peer: string;
@@ -61,6 +66,7 @@ export class DesktopSession {
   private stream: MediaStream | null = null;
   private share: string | null = null;
   private display = 1;
+  private captureGeneration = 0;
   private peers = new Set<string>();
   private disposed = false;
 
@@ -81,11 +87,21 @@ export class DesktopSession {
     if (this.stream) for (const peer of next) if (!this.outgoing.has(peer)) void this.offer(peer);
   }
 
-  async startShare(display: number): Promise<void> {
+  async startShare(display: number, size: { width: number; height: number } | null): Promise<void> {
     this.stopShare();
-    // The source is prepared before the click. getDisplayMedia must run while that click's user gesture is active.
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
-    if (this.disposed) { stream.getTracks().forEach((track) => track.stop()); return; }
+    const generation = this.captureGeneration;
+    const source = await api.prepareDesktopShare(display);
+    if (!source || this.disposed || generation !== this.captureGeneration) {
+      if (!source && generation === this.captureGeneration) throw new Error('Display source unavailable');
+      return;
+    }
+    // Electron's desktop source constraint can start without a transient click, so joining a room can share by default.
+    const video = { mandatory: {
+      chromeMediaSource: 'desktop', chromeMediaSourceId: source, maxFrameRate: 15,
+      ...(size ? { maxWidth: size.width, maxHeight: size.height } : {}),
+    } } as unknown as MediaTrackConstraints;
+    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    if (this.disposed || generation !== this.captureGeneration) { stream.getTracks().forEach((track) => track.stop()); return; }
     this.stream = stream;
     this.display = display;
     this.share = token();
@@ -96,6 +112,7 @@ export class DesktopSession {
   }
 
   stopShare(): void {
+    this.captureGeneration++;
     const old = this.share;
     this.share = null;
     this.stream?.getTracks().forEach((track) => track.stop());
@@ -109,9 +126,11 @@ export class DesktopSession {
     this.onShare(null);
   }
 
-  ping(view: DesktopView, ping: import('../../shared/pings').PingId, x: number, y: number): void {
+  sendAt(view: DesktopView, send: DesktopSend, x: number, y: number): void {
     if (!this.peers.has(view.peer) || x < 0 || x > 1 || y < 0 || y > 1) return;
-    void api.sendDesktopPing(view.peer, view.share, ping, view.display, x, y);
+    if (send.kind === 'ping') void api.sendDesktopPing(view.peer, view.share, send.id, view.display, x, y);
+    else if (send.kind === 'emote') void api.sendDesktopEmote(view.peer, view.share, send.ref, view.display, x, y);
+    else void api.sendDesktopText(view.peer, view.share, send.note, view.display, x, y);
   }
 
   dispose(): void {

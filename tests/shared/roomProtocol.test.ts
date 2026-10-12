@@ -35,8 +35,12 @@ describe('desktop messages', () => {
   it('round-trips bounded signaling chunks and target screen pings', () => {
     const signal = { ...base, t: 'desktop-signal' as const, to, id: share, part: 0, total: 2, data: 'offer' };
     const desktopPing = { ...base, t: 'desktop-ping' as const, to, share, ping: 'assist' as const, d: 2, x: 0.25, y: 0.75 };
+    const desktopEmote = { ...base, t: 'desktop-emote' as const, to, share, e: 'bee_happy', d: 2, x: 0.25, y: 0.75 };
+    const desktopText = { ...base, t: 'desktop-text' as const, to, share, note: { text: '第一行\nSecond line', color: '#ffcc00', size: 36 }, d: 2, x: 0.25, y: 0.75 };
     expect(decodeMessage(encodeMessage(signal))).toEqual(signal);
     expect(decodeMessage(encodeMessage(desktopPing))).toEqual(desktopPing);
+    expect(decodeMessage(encodeMessage(desktopEmote))).toEqual(desktopEmote);
+    expect(decodeMessage(encodeMessage(desktopText))).toEqual(desktopText);
   });
 
   it('rejects oversized, misnumbered, or malformed desktop messages', () => {
@@ -48,6 +52,16 @@ describe('desktop messages', () => {
     for (const bad of [{ ...desktopPing, share: 'bad' }, { ...desktopPing, d: 17 }, { ...desktopPing, x: -1 }]) {
       expect(validateMessage(bad)).toBeNull();
     }
+    const desktopEmote = { ...base, t: 'desktop-emote', to, share, e: 'bee_happy', d: 2, x: 0.25, y: 0.75 };
+    for (const bad of [{ ...desktopEmote, e: 'not valid!' }, { ...desktopEmote, to: 'bad' }]) expect(validateMessage(bad)).toBeNull();
+    const desktopText = { ...base, t: 'desktop-text', to, share, note: { text: 'Hello', color: '#ffcc00', size: 36 }, d: 2, x: 0.25, y: 0.75 };
+    for (const note of [
+      { text: '<img src=x onerror=alert(1)>', color: 'red', size: 36 },
+      { text: 'a\n'.repeat(9), color: '#ffcc00', size: 36 },
+      { text: 'a'.repeat(257), color: '#ffcc00', size: 36 },
+      { text: 'a', color: '#ffcc00', size: 100 },
+      { text: '\u0000', color: '#ffcc00', size: 36 },
+    ]) expect(validateMessage({ ...desktopText, note })).toBeNull();
   });
 });
 

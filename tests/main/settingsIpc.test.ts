@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({
+  app: { on: () => undefined },
   ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => h.handlers.set(channel, fn) },
   globalShortcut: { register: () => true, unregister: () => undefined },
   shell: { openExternal: async (url: string) => void h.opened.push(url) },

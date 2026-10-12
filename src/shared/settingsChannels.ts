@@ -30,6 +30,8 @@ export const SETTINGS_CH = {
   desktopSignal: 'desktop:signal',
   desktopSignalReceived: 'desktop:signalReceived',
   desktopPing: 'desktop:ping',
+  desktopEmote: 'desktop:emote',
+  desktopText: 'desktop:text',
   updateGet: 'update:get',
   updateState: 'update:state',
   updateCheck: 'update:check',

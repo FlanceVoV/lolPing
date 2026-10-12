@@ -26,6 +26,9 @@ pingSvg.after(emoteSvg);
 const emoteLayer = document.createElement('div');
 emoteLayer.id = 'emotes';
 pingLayer.after(emoteLayer);
+const textLayer = document.createElement('div');
+textLayer.id = 'texts';
+emoteLayer.after(textLayer);
 
 const sounds = new SoundBank();
 const stage = new EmoteStage(emoteLayer);
@@ -98,6 +101,25 @@ window.overlay.on('wheel:cancel', () => {
 window.overlay.on('ping:spawn', (p) => ping(pingById(p.id) ?? fallbackPing, p.x, p.y, p.tag));
 window.overlay.on('emote:spawn', (p) => emote(p.owner, p.art, p.x, p.y, p.tag));
 window.overlay.on('emote:clear', (p) => stage.clear(p.owner));
+window.overlay.on('text:spawn', (p) => {
+  const item = document.createElement('div');
+  item.className = 'desktopText';
+  item.style.left = `${p.x}px`;
+  item.style.top = `${p.y}px`;
+  item.style.setProperty('--text-color', p.note.color);
+  item.style.setProperty('--text-size', `${p.note.size}px`);
+  const words = document.createElement('div');
+  words.className = 'desktopTextWords';
+  words.textContent = p.note.text;
+  const tag = document.createElement('small');
+  tag.textContent = p.tag.name;
+  item.append(words, tag);
+  textLayer.append(item);
+  const rect = item.getBoundingClientRect();
+  item.style.marginLeft = `${Math.max(8 - rect.left, Math.min(0, innerWidth - 8 - rect.right))}px`;
+  item.style.marginTop = `${Math.max(8 - rect.top, Math.min(0, innerHeight - 8 - rect.bottom))}px`;
+  setTimeout(() => item.remove(), 6_000);
+});
 window.overlay.on('toast:show', (t) => showToast(toastLayer, t.title, t.body));
 
 /** Resolves with `label` when the image at `url` doesn't load. */

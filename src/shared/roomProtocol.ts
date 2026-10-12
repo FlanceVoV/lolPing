@@ -1,4 +1,5 @@
 import { isEmoteRefShape, type EmoteRef } from './emotes';
+import { isDesktopText, type DesktopText } from './desktopText';
 import { isPingId, type PingId } from './pings';
 import { isTagColor } from './roomColors';
 
@@ -69,7 +70,26 @@ export interface DesktopPingMsg extends Base {
   x: number;
   y: number;
 }
-export type RoomMessage = PresenceMsg | PingMsg | EmoteMsg | DesktopSignalMsg | DesktopPingMsg | ByeMsg;
+/** A viewer places an emote on the screen currently shared by `to`. */
+export interface DesktopEmoteMsg extends Base {
+  t: 'desktop-emote';
+  to: string;
+  share: string;
+  e: EmoteRef;
+  d: number;
+  x: number;
+  y: number;
+}
+export interface DesktopTextMsg extends Base {
+  t: 'desktop-text';
+  to: string;
+  share: string;
+  note: DesktopText;
+  d: number;
+  x: number;
+  y: number;
+}
+export type RoomMessage = PresenceMsg | PingMsg | EmoteMsg | DesktopSignalMsg | DesktopPingMsg | DesktopEmoteMsg | DesktopTextMsg | ByeMsg;
 
 // C0/C1 controls, zero-width characters, bidi marks, embeddings and isolates, BOM, line/paragraph separators,
 // soft hyphen, combining grapheme joiner, Arabic letter mark, Mongolian vowel separator and the Hangul fillers
@@ -127,6 +147,18 @@ export function validateMessage(raw: unknown): RoomMessage | null {
       if (!isPingId(ping) || !Number.isInteger(d) || (d as number) < 1 || (d as number) > MAX_DISPLAY || !isUnit(x) || !isUnit(y)) return null;
       return { t, ...base, to, share, ping, d: d as number, x, y };
     }
+    case 'desktop-emote': {
+      const { to, share, e, d, x, y } = raw;
+      if (typeof to !== 'string' || !/^[0-9a-f]{16}$/.test(to) || typeof share !== 'string' || !/^[0-9a-f]{16}$/.test(share)) return null;
+      if (!isEmoteRefShape(e) || !Number.isInteger(d) || (d as number) < 1 || (d as number) > MAX_DISPLAY || !isUnit(x) || !isUnit(y)) return null;
+      return { t, ...base, to, share, e, d: d as number, x, y };
+    }
+    case 'desktop-text': {
+      const { to, share, note, d, x, y } = raw;
+      if (typeof to !== 'string' || !/^[0-9a-f]{16}$/.test(to) || typeof share !== 'string' || !/^[0-9a-f]{16}$/.test(share)) return null;
+      if (!isDesktopText(note) || !Number.isInteger(d) || (d as number) < 1 || (d as number) > MAX_DISPLAY || !isUnit(x) || !isUnit(y)) return null;
+      return { t, ...base, to, share, note, d: d as number, x, y };
+    }
     case 'bye':
       return { t, ...base };
     default:
@@ -151,7 +183,8 @@ export function isOlderThan(app: string, version: string): boolean {
 }
 
 export function encodeMessage(m: RoomMessage): Uint8Array {
-  const out = m.t === 'ping' || m.t === 'emote' || m.t === 'desktop-ping' ? { ...m, x: round4(m.x), y: round4(m.y) } : m;
+  const out = m.t === 'ping' || m.t === 'emote' || m.t === 'desktop-ping' || m.t === 'desktop-emote' || m.t === 'desktop-text'
+    ? { ...m, x: round4(m.x), y: round4(m.y) } : m;
   return new TextEncoder().encode(JSON.stringify(out));
 }
 
