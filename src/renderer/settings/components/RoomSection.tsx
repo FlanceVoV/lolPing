@@ -175,6 +175,8 @@ function DesktopPanel({ room }: { room: RoomState }) {
   const [ping, setPing] = useState<PingId>('generic');
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareFailed, setPrepareFailed] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     const desktop = new DesktopSession(setViews, setSharing);
@@ -188,9 +190,23 @@ function DesktopPanel({ room }: { room: RoomState }) {
     if (sharing !== null) return;
     let live = true;
     setReady(false);
-    void api.prepareDesktopShare(display).then((ok) => { if (live) setReady(ok); }).catch(() => { if (live) setReady(false); });
+    setPreparing(true);
+    setPrepareFailed(false);
+    void api.prepareDesktopShare(display).then((ok) => {
+      if (live) { setReady(ok); setPrepareFailed(!ok); }
+    }).catch(() => { if (live) setPrepareFailed(true); }).finally(() => { if (live) setPreparing(false); });
     return () => { live = false; };
   }, [display, sharing]);
+  const retryPrepare = async () => {
+    setPreparing(true);
+    setPrepareFailed(false);
+    try {
+      const ok = await api.prepareDesktopShare(display);
+      setReady(ok);
+      setPrepareFailed(!ok);
+    } catch { setReady(false); setPrepareFailed(true); }
+    finally { setPreparing(false); }
+  };
   const start = async () => {
     setBusy(true);
     setReady(false);
@@ -198,7 +214,7 @@ function DesktopPanel({ room }: { room: RoomState }) {
     try { await controller.current?.startShare(display); }
     catch {
       setError(zh ? '无法共享所选屏幕，请检查屏幕录制权限后重试。' : 'Could not share this display. Check screen recording permission and try again.');
-      void api.prepareDesktopShare(display).then(setReady).catch(() => setReady(false));
+      void retryPrepare();
     }
     finally { setBusy(false); }
   };
@@ -216,6 +232,8 @@ function DesktopPanel({ room }: { room: RoomState }) {
           {sharing === null
             ? <Button appearance="primary" disabled={busy || !ready || room.displays.length === 0} onClick={() => void start()}>{zh ? '开始共享' : 'Share display'}</Button>
             : <Button onClick={() => controller.current?.stopShare()}>{zh ? '停止共享' : 'Stop sharing'}</Button>}
+          {preparing ? <Spinner size="tiny" /> : null}
+          {prepareFailed && !preparing && sharing === null ? <Button onClick={() => void retryPrepare()}>{zh ? '重试识别屏幕' : 'Retry display access'}</Button> : null}
         </div>
       </div>
       {sharing !== null ? <span className="desc">{zh ? `正在共享屏幕 #${sharing}` : `Sharing display #${sharing}`}</span> : null}
